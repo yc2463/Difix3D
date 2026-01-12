@@ -1,0 +1,4 @@
+[submodule "submodules/gsplat"]
+	path = submodules/gsplat
+	url = https://github.com/yc2463/gsplat.git
+	branch = experiments

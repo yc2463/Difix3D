@@ -45,6 +45,16 @@ from gsplat.rendering import rasterization
 from gsplat.strategy import DefaultStrategy, MCMCStrategy
 from gsplat.optimizers import SelectiveAdam
 
+import sys
+# Get the absolute path of the current file's directory
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# Get the parent directory (one level up)
+parent_dir = os.path.dirname(current_dir)
+# Get the parent of the parent directory (two levels up)
+grandparent_dir = os.path.dirname(parent_dir)
+# Insert the grandparent directory into the system path
+sys.path.insert(0, grandparent_dir)
+
 from examples.utils import CameraPoseInterpolator
 from src.pipeline_difix import DifixPipeline
 
@@ -878,6 +888,7 @@ class Runner:
         for i in tqdm.trange(0, len(novel_poses), desc="Fixing artifacts..."):
             image = Image.open(image_paths[i]).convert("RGB")
             ref_image = Image.open(ref_image_paths[i]).convert("RGB")
+            image = image.resize(ref_image.size, Image.LANCZOS)
             output_image = self.difix(prompt="remove degradation", image=image, ref_image=ref_image, num_inference_steps=1, timesteps=[199], guidance_scale=0.0).images[0]
             output_image = output_image.resize(image.size, Image.LANCZOS)
             os.makedirs(f"{self.render_dir}/novel/{step}/Fixed", exist_ok=True)

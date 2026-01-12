@@ -162,19 +162,54 @@ class Parser:
 
         # Downsampled images may have different names vs images used for COLMAP,
         # so we need to map between the two sorted lists of files.
-        if "3dv-dataset-nerfstudio" in data_dir:
+        if "3dv-dataset-nerfstudio" in data_dir or "DL3DV-Benchmark" in data_dir:
             colmap_files = sorted(_get_rel_paths(colmap_image_dir), key=lambda x: int(x.split(".")[0].split("_")[-1]))
             image_files = sorted(_get_rel_paths(image_dir), key=lambda x: int(x.split(".")[0].split("_")[-1]))
             colmap_to_image = dict(zip(colmap_files, image_files))
             image_names = colmap_files
             image_paths = [os.path.join(image_dir, colmap_to_image[f]) for f in image_names]
-        elif "DL3DV-Benchmark" in data_dir:
-            colmap_files = sorted(_get_rel_paths(colmap_image_dir))
-            image_files = sorted(_get_rel_paths(image_dir))
+        elif "mipnerf360-nerfstudio" in data_dir:
+            colmap_files = sorted(_get_rel_paths(colmap_image_dir), key=lambda x: int(x.split(".")[0].split("_")[-1].replace("DSCF", "").replace("DSC", "")))
+            image_files = sorted(_get_rel_paths(image_dir), key=lambda x: int(x.split(".")[0].split("_")[-1].replace("DSCF", "").replace("DSC", "")))
             colmap_to_image = dict(zip(colmap_files, image_files))
-            if len(colmap_files) != len(image_names):
-                print(f"Warning: colmap_files: {len(colmap_files)}, image_names: {len(image_names)}")
-                image_names = colmap_files
+            image_names = colmap_files
+            image_paths = [os.path.join(image_dir, colmap_to_image[f]) for f in image_names]
+        # elif "DL3DV-Benchmark" in data_dir:
+        #     colmap_files = sorted(_get_rel_paths(colmap_image_dir))
+        #     image_files = sorted(_get_rel_paths(image_dir))
+        #     colmap_to_image = dict(zip(colmap_files, image_files))
+        #     if len(colmap_files) != len(image_names):
+        #         print(f"Warning: colmap_files: {len(colmap_files)}, image_names: {len(image_names)}")
+        #         image_names = colmap_files
+        #     image_paths = [os.path.join(image_dir, colmap_to_image[f]) for f in image_names]
+        elif "nerfbusters-nerfstudio" in data_dir:
+            colmap_files_tmp = _get_rel_paths(colmap_image_dir)
+            for idx in range(len(colmap_files_tmp)):
+                if "frame_train_" in colmap_files_tmp[idx]:
+                    colmap_files_tmp[idx] = colmap_files_tmp[idx].replace("frame_train_", "frame_")
+                else:
+                    colmap_files_tmp[idx] = colmap_files_tmp[idx].replace("frame_eval_", "frame_1_")
+
+            image_files_tmp = _get_rel_paths(image_dir)
+            for idx in range(len(image_files_tmp)):
+                if "frame_train_" in image_files_tmp[idx]:
+                    image_files_tmp[idx] = image_files_tmp[idx].replace("frame_train_", "frame_")
+                else:
+                    image_files_tmp[idx] = image_files_tmp[idx].replace("frame_eval_", "frame_1_")
+
+            colmap_inds = np.argsort(colmap_files_tmp)
+            image_inds = np.argsort(image_files_tmp)
+
+            colmap_files = _get_rel_paths(colmap_image_dir)
+            image_files = _get_rel_paths(image_dir)
+
+            colmap_files = [colmap_files[i] for i in colmap_inds]
+            image_files = [image_files[i] for i in image_inds]
+
+            # colmap_files = sorted(_get_rel_paths(colmap_image_dir))
+            # image_files = sorted(_get_rel_paths(image_dir))
+            colmap_to_image = dict(zip(colmap_files, image_files))
+            image_names = colmap_files
             image_paths = [os.path.join(image_dir, colmap_to_image[f]) for f in image_names]
         else:
             colmap_files = sorted(_get_rel_paths(colmap_image_dir))
@@ -209,6 +244,23 @@ class Parser:
             points = transform_points(T2, points)
 
             transform = T2 @ T1
+
+            # Fix for up side down. We assume more points towards
+            # the bottom of the scene which is true when ground floor is
+            # present in the images.
+            if np.median(points[:, 2]) > np.mean(points[:, 2]):
+                # rotate 180 degrees around x axis such that z is flipped
+                T3 = np.array(
+                    [
+                        [1.0, 0.0, 0.0, 0.0],
+                        [0.0, -1.0, 0.0, 0.0],
+                        [0.0, 0.0, -1.0, 0.0],
+                        [0.0, 0.0, 0.0, 1.0],
+                    ]
+                )
+                camtoworlds = transform_cameras(T3, camtoworlds)
+                points = transform_points(T3, points)
+                transform = T3 @ transform
         else:
             transform = np.eye(4)
 
@@ -333,7 +385,20 @@ class Dataset:
         
         indices = np.arange(len(self.parser.image_names))
         if self.parser.test_every == 1:
-            image_names = sorted(_get_rel_paths(f"{self.parser.data_dir}/images"), key=lambda x: int(x.split(".")[0].split("_")[-1]))
+            if "nerfbusters-nerfstudio" in self.parser.data_dir:
+                image_files_tmp = _get_rel_paths(f"{self.parser.data_dir}/images")
+                for idx in range(len(image_files_tmp)):
+                    if "frame_train_" in image_files_tmp[idx]:
+                        image_files_tmp[idx] = image_files_tmp[idx].replace("frame_train_", "frame_")
+                    else:
+                        image_files_tmp[idx] = image_files_tmp[idx].replace("frame_eval_", "frame_1_")
+
+                image_inds = np.argsort(image_files_tmp)
+                image_names = _get_rel_paths(f"{self.parser.data_dir}/images")
+                image_names = [image_names[i] for i in image_inds]
+            else:
+                image_names = sorted(_get_rel_paths(f"{self.parser.data_dir}/images"), key=lambda x: int(x.split(".")[0].split("_")[-1].replace("DSCF", "").replace("DSC", "")))
+
             assert len(image_names) == len(self.parser.image_names)
             if split == "train":
                 self.indices = [ind for ind in indices if "_train_" in image_names[ind]]
@@ -346,6 +411,8 @@ class Dataset:
                 self.indices = indices[indices % self.parser.test_every == 0]
             else:
                 self.indices = indices[indices % self.parser.test_every != 0]
+
+        print(f"Split: {self.split}, indices: {self.indices}")
 
     def __len__(self):
         return len(self.indices)

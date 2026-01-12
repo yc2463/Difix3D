@@ -6,6 +6,8 @@ from PIL import Image
 from glob import glob
 from tqdm import tqdm
 from model import Difix
+from pipeline_difix import DifixPipeline
+from diffusers.utils import load_image
 
 
 if __name__ == "__main__":
@@ -13,11 +15,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--input_image', type=str, required=True, help='Path to the input image or directory')
     parser.add_argument('--ref_image', type=str, default=None, help='Path to the reference image or directory')
-    parser.add_argument('--height', type=int, default=576, help='Height of the input image')
-    parser.add_argument('--width', type=int, default=1024, help='Width of the input image')
     parser.add_argument('--prompt', type=str, required=True, help='The prompt to be used')
-    parser.add_argument('--model_name', type=str, default=None, help='Name of the pretrained model to be used')
-    parser.add_argument('--model_path', type=str, default=None, help='Path to a model state dict to be used')
     parser.add_argument('--output_dir', type=str, default='output', help='Directory to save the output')
     parser.add_argument('--seed', type=int, default=42, help='Random seed to be used')
     parser.add_argument('--timestep', type=int, default=199, help='Diffusion timestep')
@@ -28,13 +26,8 @@ if __name__ == "__main__":
     os.makedirs(args.output_dir, exist_ok=True)
 
     # Initialize the model
-    model = Difix(
-        pretrained_name=args.model_name,
-        pretrained_path=args.model_path,
-        timestep=args.timestep,
-        mv_unet=True if args.ref_image is not None else False,
-    )
-    model.set_eval()
+    pipe = DifixPipeline.from_pretrained("nvidia/difix", trust_remote_code=True)
+    pipe.to("cuda")
 
     # Load input images
     if os.path.isdir(args.input_image):
@@ -55,14 +48,7 @@ if __name__ == "__main__":
     output_images = []
     for i, input_image in enumerate(tqdm(input_images, desc="Processing images")):
         image = Image.open(input_image).convert('RGB')
-        ref_image = Image.open(ref_images[i]).convert('RGB') if args.ref_image is not None else None
-        output_image = model.sample(
-            image,
-            height=args.height,
-            width=args.width,
-            ref_image=ref_image,
-            prompt=args.prompt
-        )
+        output_image = pipe(args.prompt, image=image, num_inference_steps=1, timesteps=[199], guidance_scale=0.0).images[0]
         output_images.append(output_image)
 
     # Save outputs
